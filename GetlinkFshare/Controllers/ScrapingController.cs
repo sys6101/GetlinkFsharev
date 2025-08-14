@@ -24,9 +24,10 @@ namespace GetlinkFshare.Controllers
             _cache = cache;
         }
 
+        
         [HttpGet("prepare-download")]
         [Authorize]
-        public async Task<IActionResult> PrepareDownload([FromQuery] string fshareUrl)
+        public async Task<IActionResult> PrepareDownload([FromQuery] string fshareUrl, [FromQuery] string? filePassword = null)
         {
             if (string.IsNullOrEmpty(fshareUrl) || !Uri.TryCreate(fshareUrl, UriKind.Absolute, out _))
             {
@@ -35,18 +36,17 @@ namespace GetlinkFshare.Controllers
 
             try
             {
-                var downloadInfo = await _puppeteerService.GetDownloadInfoAsync(fshareUrl);
+                // *** ĐÃ CẬP NHẬT: Truyền mật khẩu (nếu có) vào service ***
+                var downloadInfo = await _puppeteerService.GetDownloadInfoAsync(fshareUrl, filePassword);
 
                 if (downloadInfo == null)
                 {
                     return StatusCode(500, "Không thể lấy thông tin tải file từ Fshare.");
                 }
 
-                // *** ĐÃ THÊM: Giới hạn dung lượng file ***
                 const long tenGigabytes = 10L * 1024 * 1024 * 1024; // 10 GB in bytes
                 if (downloadInfo.FileSize.HasValue && downloadInfo.FileSize.Value > tenGigabytes)
                 {
-                    // Chuyển đổi sang GB để hiển thị cho người dùng
                     var fileSizeInGB = Math.Round(downloadInfo.FileSize.Value / (1024.0 * 1024.0 * 1024.0), 2);
                     _logger.LogWarning("Yêu cầu bị từ chối do file quá lớn: {FileName} ({FileSize} GB)", downloadInfo.FileName, fileSizeInGB);
                     return BadRequest($"File quá lớn ({fileSizeInGB} GB). Chỉ hỗ trợ các file có dung lượng dưới 10 GB.");
@@ -64,8 +64,9 @@ namespace GetlinkFshare.Controllers
             }
             catch (Exception ex)
             {
+                // Trả về lỗi một cách thân thiện hơn cho client
                 _logger.LogError(ex, "Lỗi khi chuẩn bị link tải cho {Url}", fshareUrl);
-                return StatusCode(500, $"Không thể lấy thông tin tải file: {ex.Message}");
+                return BadRequest(ex.Message);
             }
         }
 

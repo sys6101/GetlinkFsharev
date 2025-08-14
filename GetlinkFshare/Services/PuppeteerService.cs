@@ -73,14 +73,14 @@ namespace GetlinkFshare.Services
             }
         }
 
-        public async Task<DownloadInfo?> GetDownloadInfoAsync(string fshareUrl)
+        public async Task<DownloadInfo?> GetDownloadInfoAsync(string fshareUrl, string? filePassword = null)
         {
             var page = await _browser.NewPageAsync();
             try
             {
                 _logger.LogInformation("Đang xử lý Fshare URL: {fshareUrl}", fshareUrl);
 
-                // *** ĐÃ THAY ĐỔI: Không còn bắt header nữa ***
+                // *** ĐÃ SỬA LỖI: Quay lại phiên bản không bắt header ***
                 var tcs = new TaskCompletionSource<(string Url, long? FileSize)>();
 
                 page.Response += (sender, e) =>
@@ -96,13 +96,49 @@ namespace GetlinkFshare.Services
                     }
                 };
 
-                var navigationTask = page.GoToAsync(fshareUrl, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle2 } });
+                var navigationTask = page.GoToAsync(fshareUrl, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle2 }, Timeout = 30000 });
 
-                await Task.WhenAny(navigationTask, tcs.Task);
+                var completedTask = await Task.WhenAny(navigationTask, tcs.Task);
 
+                if (completedTask == tcs.Task)
+                {
+                    _logger.LogInformation("Đã bắt được link download qua redirect.");
+                }
+                else
+                {
+                    const string passwordInputSelector = "#downloadpasswordform-password";
+                    var passwordInput = await page.QuerySelectorAsync(passwordInputSelector);
+
+                    if (passwordInput != null)
+                    {
+                        if (string.IsNullOrEmpty(filePassword))
+                        {
+                            throw new Exception("File được bảo vệ bằng mật khẩu. Vui lòng cung cấp mật khẩu.");
+                        }
+
+                        // *** LOGIC MỚI: Xóa thông báo lỗi cũ trước khi hành động ***
+                        const string errorSelector = "p.mdc-textfield-helptext--validation-msg";
+                        await page.EvaluateFunctionAsync($"element => element.remove()", await page.QuerySelectorAsync(errorSelector));
+                        await passwordInput.TypeAsync(filePassword);
+
+                        const string submitButtonSelector = "button.mdc-button--raised[type='submit']";
+                        await page.ClickAsync(submitButtonSelector);
+
+                        // Bây giờ mới bắt đầu chờ lỗi hoặc chờ link
+                        var errorTask = page.WaitForSelectorAsync(errorSelector, new WaitForSelectorOptions { Timeout = 7000 });
+
+                        var passwordCompletedTask = await Task.WhenAny(tcs.Task, errorTask);
+
+                        if (passwordCompletedTask == errorTask && errorTask.Result != null)
+                        {
+                            throw new Exception("Mật khẩu file không đúng hoặc không được để trống");
+                        }
+                    }
+                }
+                //Cho tác vụ bắt link thêm 1 cơ hội nữa để hoàn thành
                 if (!tcs.Task.IsCompleted)
                 {
-                    await tcs.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                    await tcs.Task.WaitAsync(TimeSpan.FromSeconds(6));
                 }
 
                 var (directLink, fileSize) = await tcs.Task;
@@ -111,8 +147,8 @@ namespace GetlinkFshare.Services
 
                 var allCookies = await page.GetCookiesAsync(fshareUrl, directLink);
                 var fshareCookies = allCookies.Where(c => c.Domain == ".fshare.vn").ToArray();
-                var fileName = WebUtility.UrlDecode(Path.GetFileName(new Uri(directLink).AbsolutePath));
 
+                var fileName = WebUtility.UrlDecode(Path.GetFileName(new Uri(directLink).AbsolutePath));
                 var userAgent = await _browser.GetUserAgentAsync();
                 var refererUrl = fshareUrl;
 
@@ -124,15 +160,13 @@ namespace GetlinkFshare.Services
                     FileSize = fileSize,
                     UserAgent = userAgent,
                     RefererUrl = refererUrl,
-                    FileName = fileName,
-                   
+                    FileName = fileName
                 };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Lỗi khi lấy thông tin download cho {fshareUrl}.", fshareUrl);
-                await page.ScreenshotAsync($"./error_screenshot_{DateTime.Now:yyyyMMddHHmmss}.png");
-                return null;
+                throw;
             }
             finally
             {

@@ -57,6 +57,8 @@ $(document).ready(function () {
     $('#scraping-form').on('submit', function (e) {
         e.preventDefault();
         const fshareUrl = $('#fshareUrl').val();
+        //thêm password file nếu có
+        const filePassword = $('#filePassword').val();
         const $resultDiv = $('#scraping-result');
         const $button = $(this).find('button[type="submit"]');
 
@@ -72,15 +74,23 @@ $(document).ready(function () {
             alert("Vui lòng nhập URL Fshare.");
             return;
         }
+        const requestData = {
+            fshareUrl: fshareUrl
+        };
+        if (filePassword) {
+            requestData.filePassword = filePassword;
+        }
 
         $button.prop('disabled', true);
         $button.find('.button-text').text('Đang xử lý...');
         $button.find('.loader').removeClass('hidden');
         $resultDiv.addClass('hidden').html('');
+        
 
         $.ajax({
-            url: `${API_BASE_URL}/api/scraping/prepare-download?fshareUrl=${encodeURIComponent(fshareUrl)}`,
+            url: `${API_BASE_URL}/api/scraping/prepare-download`,
             method: 'GET',
+            data: requestData,
             beforeSend: function (xhr) {
                 xhr.setRequestHeader('Authorization', `Bearer ${jwtToken}`);
             },
@@ -133,6 +143,7 @@ $(document).ready(function () {
         // Dọn dẹp các ô input và kết quả cũ
         $('#scraping-result').addClass('hidden').html('');
         $('#fshareUrl').val('');
+        $('#filePassword').val('');
         $('#login-message').html('');
     });
 

@@ -7,6 +7,24 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="publish\**" />
+    <Compile Remove="publish_linux\**" />
+    <Content Remove="publish\**" />
+    <Content Remove="publish_linux\**" />
+    <EmbeddedResource Remove="publish\**" />
+    <EmbeddedResource Remove="publish_linux\**" />
+    <None Remove="publish\**" />
+    <None Remove="publish_linux\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="error_screenshot_20250806171238.png" />
+    <None Remove="error_screenshot_20250806172141.png" />
+    <None Remove="error_screenshot_20250806172200.png" />
+    <None Remove="error_screenshot_20250806172222.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.18" />
     <PackageReference Include="PuppeteerSharp" Version="20.2.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />

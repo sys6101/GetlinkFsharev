@@ -16,11 +16,11 @@ namespace GetlinkFshare
             var builder = WebApplication.CreateBuilder(args);
 
             //ĐÃ THÊM: Cấu hình Forwarded Headers dùng cho Linux reverse proxy
-            //builder.Services.Configure<ForwardedHeadersOptions>(options =>
-            //{
-            //    options.ForwardedHeaders =
-            //        ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-            //});
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders =
+                    ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            });
 
             // Đăng ký dịch vụ
             builder.Services.AddSingleton<PuppeteerService>();
@@ -86,7 +86,7 @@ namespace GetlinkFshare
 
             // *** ĐÃ THÊM: Sử dụng middleware Forwarded Headers để Sử dụng cho reverse proxy trên Linux ***
             // Phải đặt trước các middleware khác như HttpsRedirection, Auth...
-            //app.UseForwardedHeaders();
+            app.UseForwardedHeaders();
 
             var puppeteerService = app.Services.GetRequiredService<PuppeteerService>();
 
