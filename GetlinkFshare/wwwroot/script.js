@@ -3,6 +3,8 @@ $(document).ready(function () {
     const API_BASE_URL = ""; // <<-- THAY ĐỔI PORT Ở ĐÂY
     const TOKEN_KEY = 'fshareApiToken'; // Khóa để lưu token trong localStorage
 
+    let signalRConnection = null;
+
     // Hàm kiểm tra trạng thái đăng nhập và cập nhật giao diện
     function checkLoginState() {
         const storedToken = localStorage.getItem(TOKEN_KEY);
@@ -10,11 +12,43 @@ $(document).ready(function () {
             // Nếu có token, ẩn form đăng nhập và hiện khu vực làm việc
             $('#login-section').hide();
             $('#scraping-section').show();
+            if (signalRConnection == null) {
+                startSignalRConnection(storedToken);
+            }
         } else {
             // Nếu không có token, hiện form đăng nhập
             $('#login-section').show();
             $('#scraping-section').hide();
         }
+    }
+    function startSignalRConnection(jwtToken) {
+        if (!jwtToken) return;
+
+        signalRConnection = new signalR.HubConnectionBuilder()
+            .withUrl("/fshareInfoHub", {
+                accessTokenFactory: () => jwtToken
+            })
+            .withAutomaticReconnect()
+            .build();
+
+        // *** ĐÃ CẬP NHẬT: Cập nhật giao diện mới ***
+        signalRConnection.on("ReceiveStorageInfo", function (info) {
+            console.log("Received storage info:", info);
+            const { usedStorage, availableToday, lastUpdated } = info;
+
+            const updatedTime = new Date(lastUpdated).toLocaleTimeString('vi-VN');
+
+            // Cập nhật các phần tử mới
+            $('#storage-used').text(usedStorage.replace('Sử dụng: ', ''));
+            $('#storage-available').text(availableToday.replace('Còn khả dụng: ', ''));
+            $('#storage-updated').text(updatedTime);
+        });
+
+        signalRConnection.start().then(function () {
+            console.log("SignalR Connected (Authenticated).");
+        }).catch(function (err) {
+            console.error(err.toString());
+        });
     }
 
     // Hàm format kích thước file cho dễ đọc
@@ -67,6 +101,12 @@ $(document).ready(function () {
 
         if (!jwtToken) {
             alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+            if (signalRConnection) {
+                signalRConnection.stop().then(() => {
+                    console.log("SignalR Disconnected.");
+                    signalRConnection = null;
+                });
+            }
             checkLoginState(); // Cập nhật giao diện về trang đăng nhập
             return;
         }
@@ -116,6 +156,13 @@ $(document).ready(function () {
                 if (jqXHR.status === 401) {
                     alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
                     localStorage.removeItem(TOKEN_KEY); // Xóa token cũ
+                    // Ngắt kết nối SignalR nếu đang kết nối
+                    if (signalRConnection) {
+                        signalRConnection.stop().then(() => {
+                            console.log("SignalR Disconnected.");
+                            signalRConnection = null;
+                        });
+                    }
                     checkLoginState(); // Cập nhật giao diện
                 } else {
                     const errorMsg = jqXHR.responseText || "Lỗi không xác định.";
@@ -138,6 +185,13 @@ $(document).ready(function () {
     $('#logout-button').on('click', function () {
         // *** ĐÃ THAY ĐỔI: Xóa token khỏi localStorage ***
         localStorage.removeItem(TOKEN_KEY);
+        // Ngắt kết nối SignalR nếu đang kết nối
+        if (signalRConnection) {
+            signalRConnection.stop().then(() => {
+                console.log("SignalR Disconnected.");
+                signalRConnection = null;
+            });
+        }
         // Cập nhật giao diện
         checkLoginState();
         // Dọn dẹp các ô input và kết quả cũ

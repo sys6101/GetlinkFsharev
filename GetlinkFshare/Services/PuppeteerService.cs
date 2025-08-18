@@ -177,6 +177,60 @@ namespace GetlinkFshare.Services
             }
         }
 
+        public async Task<StorageInfo?> GetStorageInfoAsync()
+        {
+            var page = await _browser.NewPageAsync();
+            try
+            {
+                const string infoUrl = "https://www.fshare.vn/account/inforesource";
+                _logger.LogInformation("Đang truy cập trang thông tin dung lượng: {url}", infoUrl);
+                await page.GoToAsync(infoUrl, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle2 } });
+
+                const string storageSelector = "div#down-traffic-profile div.account-storage";
+                _logger.LogInformation("Đang chờ selector: {selector}", storageSelector);
+                var storageDiv = await page.WaitForSelectorAsync(storageSelector, new WaitForSelectorOptions { Timeout = 15000 });
+
+                if (storageDiv == null)
+                {
+                    _logger.LogWarning("Không thể tìm thấy div chứa thông tin dung lượng.");
+                    return null;
+                }
+
+                var spanElements = await storageDiv.QuerySelectorAllAsync("span");
+
+                if (spanElements.Length >= 2)
+                {
+                    var usedStorageHandle = await spanElements[0].GetPropertyAsync("innerText");
+                    var usedStorage = await usedStorageHandle.JsonValueAsync<string>();
+
+                    var availableTodayHandle = await spanElements[1].GetPropertyAsync("innerText");
+                    var availableToday = await availableTodayHandle.JsonValueAsync<string>();
+
+                    return new StorageInfo
+                    {
+                        UsedStorage = usedStorage?.Trim() ?? string.Empty,
+                        AvailableToday = availableToday?.Trim() ?? string.Empty,
+                        //Giá trị ngày giờ sẽ được cập nhật trong worker
+                        LastUpdated = null
+
+                    };
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi lấy thông tin dung lượng Fshare.");
+                await page.ScreenshotAsync($"./storage_info_error_{DateTime.Now:yyyyMMddHHmmss}.png");
+                return null;
+            }
+            finally
+            {
+                if (!page.IsClosed)
+                {
+                    await page.CloseAsync();
+                }
+            }
+        }
         public async ValueTask DisposeAsync()
         {
             if (_browser != null && !_browser.IsClosed)

@@ -146,7 +146,7 @@ namespace GetlinkFshare.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogInformation("Stream copy interrupted for file '{FileName}'. Exception: {ExceptionType}", downloadInfo.FileName, ex.GetType().Name);
+                //_logger.LogInformation("Stream copy interrupted for file '{FileName}'. Exception: {ExceptionType}", downloadInfo.FileName, ex.GetType().Name);
             }
         }
     }

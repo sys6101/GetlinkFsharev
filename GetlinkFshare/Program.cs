@@ -1,5 +1,7 @@
 ﻿
 using GetlinkFshare.Services;
+using GetlinkFshare.SignalRHub;
+using GetlinkFshare.Workers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
@@ -27,6 +29,10 @@ namespace GetlinkFshare
             builder.Services.AddControllers();
             builder.Services.AddMemoryCache();
 
+            // *** ĐÃ THÊM: Đăng ký SignalR và Background Worker ***
+            builder.Services.AddSignalR();
+            builder.Services.AddHostedService<FshareInfoWorker>();
+
             //Loại bỏ HttpClient mặc định để tránh lỗi khi sử dụng PuppeteerSharp
             //builder.Services.AddHttpClient();
 
@@ -47,6 +53,23 @@ namespace GetlinkFshare
                     ValidIssuer = builder.Configuration["Jwt:Issuer"],
                     ValidAudience = builder.Configuration["Jwt:Audience"],
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+
+                        // Nếu request đang đi đến Hub của chúng ta...
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(accessToken) &&
+                            (path.StartsWithSegments("/fshareInfoHub")))
+                        {
+                            // Đọc token từ query string
+                            context.Token = accessToken;
+                        }
+                        return Task.CompletedTask;
+                    }
                 };
             });
 
@@ -112,6 +135,9 @@ namespace GetlinkFshare
             app.UseAuthorization();
 
             app.MapControllers();
+
+            // *** ĐÃ THÊM: Map endpoint cho SignalR Hub ***
+            app.MapHub<FshareInfoHub>("/fshareInfoHub");
 
             app.Run();
         }

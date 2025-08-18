@@ -8,6 +8,7 @@
     <!-- Thư viện ngoài -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
 
     <!-- Link tới file CSS tùy chỉnh -->
     <link rel="stylesheet" href="style.css">
@@ -49,11 +50,27 @@
         <div id="scraping-section" class="hidden">
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold text-gray-800">Lấy Link Tải Fshare</h1>
+
                 <button id="logout-button"
                         class="bg-red-500 hover:bg-red-700 text-white text-sm font-bold py-1 px-3 rounded focus:outline-none focus:shadow-outline">
                     Đăng
                     xuất
                 </button>
+            </div>
+            <!-- *** ĐÃ THAY ĐỔI: Giao diện hiển thị dung lượng mới *** -->
+            <div id="storage-info-container" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-6 p-4 bg-gray-50 rounded-lg border">
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Đã sử dụng</h3>
+                    <p id="storage-used" class="text-2xl font-bold text-blue-600 mt-1">-</p>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Khả dụng / ngày</h3>
+                    <p id="storage-available" class="text-2xl font-bold text-green-600 mt-1">-</p>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cập nhật lúc</h3>
+                    <p id="storage-updated" class="text-2xl font-bold text-gray-700 mt-1">-</p>
+                </div>
             </div>
 
             <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6" role="alert">
@@ -100,7 +117,7 @@
     </div>
 
     <!-- Link tới file JavaScript logic -->
-    <script src="script.js"></script>
+    <script src="script.js?v=1.0.5"></script>
 
 </body>
 
