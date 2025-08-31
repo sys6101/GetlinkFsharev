@@ -1,4 +1,4 @@
-﻿using GetlinkFshare.Models;
+using GetlinkFshare.Models;
 using PuppeteerSharp;
 using System.Net;
 
@@ -80,15 +80,16 @@ namespace GetlinkFshare.Services
             {
                 _logger.LogInformation("Đang xử lý Fshare URL: {fshareUrl}", fshareUrl);
 
-                // *** ĐÃ SỬA LỖI: Quay lại phiên bản không bắt header ***
                 var tcs = new TaskCompletionSource<(string Url, long? FileSize)>();
 
                 page.Response += (sender, e) =>
                 {
-                    if (e.Response.Headers.TryGetValue("content-disposition", out var contentDisposition) && contentDisposition.Contains("attachment"))
+                    if (e.Response.Headers.TryGetValue("content-disposition", out var contentDisposition) &&
+                        contentDisposition.Contains("attachment"))
                     {
                         long? fileSize = null;
-                        if (e.Response.Headers.TryGetValue("content-length", out var lengthStr) && long.TryParse(lengthStr, out var length))
+                        if (e.Response.Headers.TryGetValue("content-length", out var lengthStr) &&
+                            long.TryParse(lengthStr, out var length))
                         {
                             fileSize = length;
                         }
@@ -96,86 +97,119 @@ namespace GetlinkFshare.Services
                     }
                 };
 
-                var navigationTask = page.GoToAsync(fshareUrl, new NavigationOptions { WaitUntil = new[] { WaitUntilNavigation.Networkidle2 }, Timeout = 30000 });
+        // Mở link Fshare
+        var navigationTask = page.GoToAsync(fshareUrl, new NavigationOptions
+        {
+            WaitUntil = new[] { WaitUntilNavigation.Networkidle2 },
+            Timeout = 10000
+        });
 
-                var completedTask = await Task.WhenAny(navigationTask, tcs.Task);
+        var completedTask = await Task.WhenAny(navigationTask, tcs.Task);
 
-                if (completedTask == tcs.Task)
+        if (completedTask == tcs.Task)
+        {
+            _logger.LogInformation("Đã bắt được link download qua redirect.");
+        }
+        else
+        {
+            // Trường hợp cần nhập mật khẩu
+            const string passwordInputSelector = "#downloadpasswordform-password";
+            var passwordInput = await page.QuerySelectorAsync(passwordInputSelector);
+
+            if (passwordInput != null)
+            {
+                if (string.IsNullOrEmpty(filePassword))
                 {
-                    _logger.LogInformation("Đã bắt được link download qua redirect.");
+                    throw new Exception("File được bảo vệ bằng mật khẩu. Vui lòng cung cấp mật khẩu.");
+                }
+
+                // Xóa thông báo lỗi cũ (nếu có)
+                const string errorSelector = "p.mdc-textfield-helptext--validation-msg";
+                var oldError = await page.QuerySelectorAsync(errorSelector);
+                if (oldError != null)
+                {
+                    await page.EvaluateFunctionAsync("el => el.remove()", oldError);
+                }
+
+                // Nhập mật khẩu và submit
+                await passwordInput.TypeAsync(filePassword);
+                const string submitButtonSelector = "button.mdc-button--raised[type='submit']";
+                await page.ClickAsync(submitButtonSelector);
+
+                // Chờ hoặc link, hoặc báo lỗi
+                var errorTask = page.WaitForSelectorAsync(errorSelector,
+                    new WaitForSelectorOptions { Timeout = 7000 });
+                var passwordCompletedTask = await Task.WhenAny(tcs.Task, errorTask);
+
+                if (passwordCompletedTask == errorTask && errorTask.Result != null)
+                {
+                    throw new Exception("Mật khẩu file không đúng hoặc không được để trống");
+                }
+            }
+
+            // Nếu vẫn chưa có link → click nút TẢI NHANH
+            if (!tcs.Task.IsCompleted)
+            {
+                _logger.LogInformation("Không có link redirect, thử click nút TẢI NHANH...");
+                var button = await page.QuerySelectorAsync("button.btn_download_vip");
+                if (button != null)
+                {
+                    await button.ClickAsync();
+
+                    var clickCompleted = await Task.WhenAny(tcs.Task, Task.Delay(15000));
+                    if (clickCompleted != tcs.Task)
+                    {
+                        _logger.LogWarning("Không bắt được link sau khi click nút tải.");
+                    }
                 }
                 else
                 {
-                    const string passwordInputSelector = "#downloadpasswordform-password";
-                    var passwordInput = await page.QuerySelectorAsync(passwordInputSelector);
-
-                    if (passwordInput != null)
-                    {
-                        if (string.IsNullOrEmpty(filePassword))
-                        {
-                            throw new Exception("File được bảo vệ bằng mật khẩu. Vui lòng cung cấp mật khẩu.");
-                        }
-
-                        // *** LOGIC MỚI: Xóa thông báo lỗi cũ trước khi hành động ***
-                        const string errorSelector = "p.mdc-textfield-helptext--validation-msg";
-                        await page.EvaluateFunctionAsync($"element => element.remove()", await page.QuerySelectorAsync(errorSelector));
-                        await passwordInput.TypeAsync(filePassword);
-
-                        const string submitButtonSelector = "button.mdc-button--raised[type='submit']";
-                        await page.ClickAsync(submitButtonSelector);
-
-                        // Bây giờ mới bắt đầu chờ lỗi hoặc chờ link
-                        var errorTask = page.WaitForSelectorAsync(errorSelector, new WaitForSelectorOptions { Timeout = 7000 });
-
-                        var passwordCompletedTask = await Task.WhenAny(tcs.Task, errorTask);
-
-                        if (passwordCompletedTask == errorTask && errorTask.Result != null)
-                        {
-                            throw new Exception("Mật khẩu file không đúng hoặc không được để trống");
-                        }
-                    }
-                }
-                //Cho tác vụ bắt link thêm 1 cơ hội nữa để hoàn thành
-                if (!tcs.Task.IsCompleted)
-                {
-                    await tcs.Task.WaitAsync(TimeSpan.FromSeconds(6));
-                }
-
-                var (directLink, fileSize) = await tcs.Task;
-
-                if (string.IsNullOrEmpty(directLink)) return null;
-
-                var allCookies = await page.GetCookiesAsync(fshareUrl, directLink);
-                var fshareCookies = allCookies.Where(c => c.Domain == ".fshare.vn").ToArray();
-
-                var fileName = WebUtility.UrlDecode(Path.GetFileName(new Uri(directLink).AbsolutePath));
-                var userAgent = await _browser.GetUserAgentAsync();
-                var refererUrl = fshareUrl;
-
-                return new DownloadInfo
-                {
-                    OriginalFshareUrl = fshareUrl,
-                    DirectLink = directLink,
-                    Cookies = fshareCookies,
-                    FileSize = fileSize,
-                    UserAgent = userAgent,
-                    RefererUrl = refererUrl,
-                    FileName = fileName
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Lỗi khi lấy thông tin download cho {fshareUrl}.", fshareUrl);
-                throw;
-            }
-            finally
-            {
-                if (!page.IsClosed)
-                {
-                    await page.CloseAsync();
+                    _logger.LogWarning("Không tìm thấy nút TẢI NHANH trên trang.");
                 }
             }
         }
+
+        // Cho tác vụ bắt link thêm 1 cơ hội nữa để hoàn thành
+        if (!tcs.Task.IsCompleted)
+        {
+            await tcs.Task.WaitAsync(TimeSpan.FromSeconds(6));
+        }
+
+        var (directLink, fileSize) = await tcs.Task;
+
+        if (string.IsNullOrEmpty(directLink)) return null;
+
+        var allCookies = await page.GetCookiesAsync(fshareUrl, directLink);
+        var fshareCookies = allCookies.Where(c => c.Domain == ".fshare.vn").ToArray();
+
+        var fileName = WebUtility.UrlDecode(Path.GetFileName(new Uri(directLink).AbsolutePath));
+        var userAgent = await _browser.GetUserAgentAsync();
+        var refererUrl = fshareUrl;
+
+        return new DownloadInfo
+        {
+            OriginalFshareUrl = fshareUrl,
+            DirectLink = directLink,
+            Cookies = fshareCookies,
+            FileSize = fileSize,
+            UserAgent = userAgent,
+            RefererUrl = refererUrl,
+            FileName = fileName
+        };
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Lỗi khi lấy thông tin download cho {fshareUrl}.", fshareUrl);
+        throw;
+    }
+    finally
+    {
+        if (!page.IsClosed)
+        {
+            await page.CloseAsync();
+        }
+    }
+}
 
         public async Task<StorageInfo?> GetStorageInfoAsync()
         {
